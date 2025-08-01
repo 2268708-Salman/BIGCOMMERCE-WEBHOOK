@@ -1,5 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
  
+interface Order {
+  id: number;
+  status: string;
+  total_inc_tax: string;
+  shipping_cost_inc_tax: string;
+  products: any[]; // You can type this further if needed
+  coupons: any;
+  fees: any;
+  customer_id: number;
+}
+ 
+interface Customer {
+  id: number;
+  email: string;
+  company: string | null;
+  first_name: string;
+  last_name: string;
+}
+ 
+interface ExtraField {
+  fieldName: string;
+  fieldValue: string;
+}
+ 
+interface Company {
+  companyId: number;
+  companyName: string;
+  extraFields?: ExtraField[];
+}
+ 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -15,7 +45,7 @@ const orderRes = await fetch(`https://api.bigcommerce.com/stores/${process.env.B
       }
     });
  
-    const order = await orderRes.json();
+    const order: Order = await orderRes.json();
  
     const customerId = order.customer_id;
 const customerRes = await fetch(`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v3/customers/${customerId}`, {
@@ -27,9 +57,8 @@ const customerRes = await fetch(`https://api.bigcommerce.com/stores/${process.en
     });
  
     const customerData = await customerRes.json();
-    const customer = customerData.data;
+    const customer: Customer = customerData.data;
  
-    // ✅ Print Order Details
     console.log("🧾 Order Summary:", {
 id: order.id,
       status: order.status,
@@ -40,7 +69,6 @@ coupons: order.coupons,
       fees: order.fees
     });
  
-    // ✅ Print Customer Info
     console.log("👤 Customer Info:", {
 id: customer.id,
 email: customer.email,
@@ -49,7 +77,6 @@ company: customer.company,
       last_name: customer.last_name,
     });
  
-    // ✅ Fetch Company Info
 const customerCompanyName = customer.company?.trim().toLowerCase();
  
     if (!customerCompanyName) {
@@ -64,9 +91,9 @@ const companyRes = await fetch("https://api-b2b.bigcommerce.com/api/v3/io/compan
       });
  
       const companiesData = await companyRes.json();
-      const companies = companiesData.data;
+      const companies: Company[] = companiesData.data;
  
-      const matchedCompany = companies.find((company: any) =>
+      const matchedCompany = companies.find((company) =>
         company.companyName?.trim().toLowerCase() === customerCompanyName
       );
  
@@ -74,18 +101,19 @@ const companyRes = await fetch("https://api-b2b.bigcommerce.com/api/v3/io/compan
         console.log(`❌ No matching company found for: ${customerCompanyName}`);
       } else {
         const e8Field = matchedCompany.extraFields?.find(
-          (field: any) => field.fieldName?.toUpperCase() === "E8 COMPANY ID"
+          (field) => field.fieldName?.toUpperCase() === "E8 COMPANY ID"
         );
-        const e8CompanyId = e8Field?.fieldValue || null; 
-        // ✅ Print Company Info
+        const e8CompanyId = e8Field?.fieldValue || null;
+ 
         console.log("🏢 Company Matched:", {
           companyId: matchedCompany.companyId,
           companyName: matchedCompany.companyName,
-          e8CompanyId: e8CompanyId,
+          e8CompanyId,
           fullCompanyData: matchedCompany,
         });
       }
     }
+ 
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("❌ Error in webhook handler:", err);
