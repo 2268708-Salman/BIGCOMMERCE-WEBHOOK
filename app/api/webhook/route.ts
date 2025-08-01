@@ -44,10 +44,6 @@ export async function POST(req: NextRequest) {
     console.log("📦 Raw body:", body);
  
     const orderId = body.data?.id;
-    if (!orderId) {
-      throw new Error("❌ No order ID found in webhook payload.");
-    }
- 
     console.log("🔔 Webhook triggered for order:", orderId);
  
     const orderRes = await fetch(
@@ -56,8 +52,8 @@ export async function POST(req: NextRequest) {
         headers: {
           'X-Auth-Token': process.env.BC_API_TOKEN!,
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       }
     );
  
@@ -69,14 +65,15 @@ export async function POST(req: NextRequest) {
     const order: OrderResponse = await orderRes.json();
  
     const customerId = order.customer_id;
+ 
     const customerRes = await fetch(
-`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v3/customers/${customerId}`,
+`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v3/customers?id:in=${customerId}`,
       {
         headers: {
           'X-Auth-Token': process.env.BC_API_TOKEN!,
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       }
     );
  
@@ -85,10 +82,9 @@ export async function POST(req: NextRequest) {
       throw new Error(`❌ Customer fetch failed (${customerRes.status}): ${errorText}`);
     }
  
-    const customerJson = await customerRes.json();
-    const customer: CustomerResponse = customerJson.data;
+    const customerData = await customerRes.json();
+    const customer: CustomerResponse = customerData.data[0];
  
-    // ✅ Print Order Info
     console.log("🧾 Order Details:", {
 id: order.id,
       status: order.status,
@@ -99,7 +95,6 @@ coupons: order.coupons,
       fees: order.fees,
     });
  
-    // ✅ Print Customer Info
     console.log("👤 Customer Details:", {
 id: customer.id,
 email: customer.email,
@@ -109,6 +104,7 @@ company: customer.company,
     });
  
 const companyName = customer.company?.trim().toLowerCase();
+ 
     if (!companyName) {
       console.log("❗ Customer has no company assigned.");
     } else {
@@ -122,25 +118,18 @@ const companyName = customer.company?.trim().toLowerCase();
         }
       );
  
-      if (!companyRes.ok) {
-        const errorText = await companyRes.text();
-        throw new Error(`❌ Company fetch failed (${companyRes.status}): ${errorText}`);
-      }
- 
       const companyJson = await companyRes.json();
       const companies: Company[] = companyJson.data;
  
       const matchedCompany = companies.find(
-        (comp: Company) =>
-          comp.companyName?.trim().toLowerCase() === companyName
+        (comp) => comp.companyName?.trim().toLowerCase() === companyName
       );
  
       if (!matchedCompany) {
         console.log(`❌ No matching company found for: ${companyName}`);
       } else {
         const e8Field = matchedCompany.extraFields?.find(
-          (field: ExtraField) =>
-            field.fieldName.toUpperCase() === "E8 COMPANY ID"
+          (field) => field.fieldName.toUpperCase() === "E8 COMPANY ID"
         );
  
         const e8CompanyId = e8Field?.fieldValue || null;
@@ -149,6 +138,7 @@ const companyName = customer.company?.trim().toLowerCase();
           companyId: matchedCompany.companyId,
           companyName: matchedCompany.companyName,
           e8CompanyId,
+          fullCompanyData: matchedCompany,
         });
       }
     }
