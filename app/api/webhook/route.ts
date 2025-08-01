@@ -1,42 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
  
-// Env vars
 const storeHash = process.env.BC_STORE_HASH!;
 const token = process.env.BC_API_TOKEN!;
 const companyApiToken = process.env.BC_COMPANY_API_TOKEN!;
  
-// API URLs
 const apiUrl = `https://api.bigcommerce.com/stores/${storeHash}/v2`;
 const companyApiUrl = "https://api-b2b.bigcommerce.com/api/v3/io/companies";
  
-// --------------------
-// ✅ Interfaces
-// --------------------
+// 🧾 Types
 interface ExtraField {
   fieldName: string;
   fieldValue: string;
-  [key: string]: any;
 }
  
-interface CompanyData {
+interface Company {
   companyId: number;
   companyName: string;
   extraFields?: ExtraField[];
-  [key: string]: any;
 }
  
-interface CompanyResponse {
+interface CompanyApiResponse {
   code: number;
-  data: CompanyData[];
+  data: Company[];
   meta: {
     message: string;
   };
 }
  
-// --------------------
-// ✅ Safe Fetch
-// --------------------
-async function safeFetch<T = any>(url: string, useCompanyApi = false): Promise<T | null> {
+// 🛡️ Generic Fetch
+async function safeFetch<T>(url: string, useCompanyApi = false): Promise<T | null> {
   try {
     const headers = {
       "X-Auth-Token": useCompanyApi ? companyApiToken : token,
@@ -44,19 +36,17 @@ async function safeFetch<T = any>(url: string, useCompanyApi = false): Promise<T
       "Content-Type": "application/json",
     };
  
-    const response = await fetch(url, { headers });
-    const text = await response.text();
+    const res = await fetch(url, { headers });
+    const text = await res.text();
     if (!text) return null;
     return JSON.parse(text) as T;
-  } catch (error) {
-    console.error("❌ Fetch error:", error);
+  } catch (err) {
+    console.error("❌ Fetch error:", err);
     return null;
   }
 }
  
-// --------------------
-// ✅ Webhook Handler
-// --------------------
+// 📦 Webhook Handler
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -66,33 +56,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing order ID" }, { status: 400 });
     }
  
-    // 🔹 Fetch order & related data
-    const order = await safeFetch(`${apiUrl}/orders/${orderId}`);
+    // Fetch order and related details
+    const order = await safeFetch<any>(`${apiUrl}/orders/${orderId}`);
     const customer = order?.customer_id
-      ? await safeFetch(`${apiUrl}/customers/${order.customer_id}`)
+      ? await safeFetch<any>(`${apiUrl}/customers/${order.customer_id}`)
       : null;
-    const products = await safeFetch(`${apiUrl}/orders/${orderId}/products`);
-    const fees = await safeFetch(`${apiUrl}/orders/${orderId}/fees`);
-    const coupons = await safeFetch(`${apiUrl}/orders/${orderId}/coupons`);
  
-    // 🔹 Match customer company with company list
+    const products = await safeFetch<any[]>(`${apiUrl}/orders/${orderId}/products`);
+    const fees = await safeFetch<any[]>(`${apiUrl}/orders/${orderId}/fees`);
+    const coupons = await safeFetch<any[]>(`${apiUrl}/orders/${orderId}/coupons`);
+ 
+    // Match company
     const customerCompanyName = customer?.company?.toLowerCase();
-    const companyRes = await safeFetch<CompanyResponse>(companyApiUrl, true);
+    const companyRes = await safeFetch<CompanyApiResponse>(companyApiUrl, true);
     const allCompanies = companyRes?.data || [];
  
     const matchedCompany = allCompanies.find(
-      (comp: CompanyData) => comp.companyName?.toLowerCase() === customerCompanyName
+      (comp) => comp.companyName.toLowerCase() === customerCompanyName
     );
  
-    // 🔹 Get E8 Company ID from extraFields
     const e8Field = matchedCompany?.extraFields?.find(
-      (field: ExtraField) => field.fieldName === "E8 COMPANY ID"
+      (field) => field.fieldName === "E8 COMPANY ID"
     );
  
     const e8CompanyId = e8Field?.fieldValue || null;
     const companyId = matchedCompany?.companyId || null;
  
-    // 🔹 Combine all data
     const fullData = {
       order,
       customer,
