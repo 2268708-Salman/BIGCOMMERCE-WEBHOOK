@@ -40,8 +40,26 @@ interface Company {
  
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch (jsonError) {
+      console.error("❌ Invalid JSON payload received:", jsonError);
+      return NextResponse.json(
+        { success: false, error: "The route is not valid JSON" },
+        { status: 400 }
+      );
+    }
+ 
     const orderId = body.data?.id;
+ 
+    if (!orderId) {
+      console.log("❌ No order ID found in payload:", body);
+      return NextResponse.json(
+        { success: false, error: "Missing order ID in payload" },
+        { status: 400 }
+      );
+    }
  
     console.log("🔔 Webhook triggered for order:", orderId);
  
@@ -137,6 +155,6 @@ const companyName = customer.company?.trim().toLowerCase();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("❌ Error in webhook handler:", error);
-    return NextResponse.json({ success: false, error }, { status: 500 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
