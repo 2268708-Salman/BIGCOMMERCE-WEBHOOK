@@ -54,7 +54,10 @@ export async function POST(req: NextRequest) {
  
     // 👉 Extract E8 COMPANY ID from extraFields
     const e8Field = company?.extraFields?.find(
-      (field: any) => field.fieldName === "E8 COMPANY ID"
+      (field: {
+        fieldName: string;
+        fieldValue?: string;
+      }) => field.fieldName === "E8 COMPANY ID"
     );
     const e8CompanyId = e8Field?.fieldValue || null;
  
