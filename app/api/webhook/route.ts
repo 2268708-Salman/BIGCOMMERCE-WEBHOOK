@@ -8,17 +8,11 @@ const companyApiUrl = "https://api-b2b.bigcommerce.com/api/v3/io/companies";
  
 async function safeFetch(url: string, useCompanyApi = false) {
   try {
-    const headers = useCompanyApi
-      ? {
-          "X-Auth-Token": companyApiToken,
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        }
-      : {
-          "X-Auth-Token": token,
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        };
+    const headers = {
+      "X-Auth-Token": useCompanyApi ? companyApiToken : token,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    };
  
     const response = await fetch(url, { headers });
     const text = await response.text();
@@ -48,18 +42,25 @@ export async function POST(req: NextRequest) {
     const fees = await safeFetch(`${apiUrl}/orders/${orderId}/fees`);
     const coupons = await safeFetch(`${apiUrl}/orders/${orderId}/coupons`);
  
-    // 👉 Step: Call company API
-    const companyRes = await safeFetch(companyApiUrl, true);
-    const company = companyRes?.data;
+    // 🧠 Step: Get company name from customer
+    const customerCompanyName = customer?.company?.toLowerCase();
  
-    // 👉 Extract E8 COMPANY ID from extraFields
-    const e8Field = company?.extraFields?.find(
-      (field: {
-        fieldName: string;
-        fieldValue?: string;
-      }) => field.fieldName === "E8 COMPANY ID"
+    // ✅ Step: Get all companies
+    const allCompaniesRes = await safeFetch(companyApiUrl, true);
+    const allCompanies = allCompaniesRes?.data || [];
+ 
+    // ✅ Step: Match company by name (case-insensitive)
+    const matchedCompany = allCompanies.find((comp: any) =>
+      comp.companyName?.toLowerCase() === customerCompanyName
     );
+ 
+    // ✅ Extract E8 Company ID from extraFields
+    const e8Field = matchedCompany?.extraFields?.find(
+      (field: any) => field.fieldName === "E8 COMPANY ID"
+    );
+ 
     const e8CompanyId = e8Field?.fieldValue || null;
+    const companyId = matchedCompany?.companyId || null;
  
     const fullData = {
       order,
@@ -67,11 +68,12 @@ export async function POST(req: NextRequest) {
       products,
       fees,
       coupons,
-      company,
+      company: matchedCompany,
+      companyId,
       e8CompanyId,
     };
  
-    console.log("✅ Full Order + E8 ID:", fullData);
+    console.log("✅ Full Order + Company + E8 ID:", fullData);
  
     return NextResponse.json({ success: true, data: fullData });
   } catch (err) {
