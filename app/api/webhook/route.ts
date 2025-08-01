@@ -1,20 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
  
-interface Order {
+interface OrderProduct {
+  product_id: number;
+  name: string;
+  quantity: number;
+  price_inc_tax: string;
+  discounted_total_inc_tax: string;
+}
+ 
+interface OrderResponse {
   id: number;
   status: string;
   total_inc_tax: string;
   shipping_cost_inc_tax: string;
-  products: any[]; // You can type this further if needed
-  coupons: any;
-  fees: any;
+  products: OrderProduct[];
+  coupons: unknown[];
+  fees: unknown[];
   customer_id: number;
 }
  
-interface Customer {
+interface CustomerResponse {
   id: number;
   email: string;
-  company: string | null;
+  company: string;
   first_name: string;
   last_name: string;
 }
@@ -37,39 +45,48 @@ export async function POST(req: NextRequest) {
  
     console.log("🔔 Webhook triggered for order:", orderId);
  
-const orderRes = await fetch(`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v2/orders/${orderId}?include=products`, {
-      headers: {
-        'X-Auth-Token': process.env.BC_API_TOKEN!,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
+    const orderRes = await fetch(
+`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v2/orders/${orderId}?include=products`,
+      {
+        headers: {
+          'X-Auth-Token': process.env.BC_API_TOKEN!,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
       }
-    });
+    );
  
-    const order: Order = await orderRes.json();
+    const order: OrderResponse = await orderRes.json();
  
     const customerId = order.customer_id;
-const customerRes = await fetch(`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v3/customers/${customerId}`, {
-      headers: {
-        'X-Auth-Token': process.env.BC_API_TOKEN!,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
+ 
+    const customerRes = await fetch(
+`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v3/customers/${customerId}`,
+      {
+        headers: {
+          'X-Auth-Token': process.env.BC_API_TOKEN!,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
       }
-    });
+    );
  
     const customerData = await customerRes.json();
-    const customer: Customer = customerData.data;
+    const customer: CustomerResponse = customerData.data;
  
-    console.log("🧾 Order Summary:", {
+    // ✅ Print Order Info
+    console.log("🧾 Order Details:", {
 id: order.id,
       status: order.status,
       total_inc_tax: order.total_inc_tax,
       shipping_cost_inc_tax: order.shipping_cost_inc_tax,
       products: order.products,
 coupons: order.coupons,
-      fees: order.fees
+      fees: order.fees,
     });
  
-    console.log("👤 Customer Info:", {
+    // ✅ Print Customer Info
+    console.log("👤 Customer Details:", {
 id: customer.id,
 email: customer.email,
 company: customer.company,
@@ -77,35 +94,38 @@ company: customer.company,
       last_name: customer.last_name,
     });
  
-const customerCompanyName = customer.company?.trim().toLowerCase();
+const companyName = customer.company?.trim().toLowerCase();
  
-    if (!customerCompanyName) {
-      console.log("No company assigned to customer.");
+    if (!companyName) {
+      console.log("❗ Customer has no company assigned.");
     } else {
-const companyRes = await fetch("https://api-b2b.bigcommerce.com/api/v3/io/companies", {
-        method: "GET",
-        headers: {
-          "X-Auth-Token": process.env.B2B_API_TOKEN!,
-          "Content-Type": "application/json",
-        },
-      });
+      const companyRes = await fetch(
+"https://api-b2b.bigcommerce.com/api/v3/io/companies",
+        {
+          headers: {
+            "X-Auth-Token": process.env.B2B_API_TOKEN!,
+            "Content-Type": "application/json",
+          },
+        }
+      );
  
-      const companiesData = await companyRes.json();
-      const companies: Company[] = companiesData.data;
+      const companyJson = await companyRes.json();
+      const companies: Company[] = companyJson.data;
  
-      const matchedCompany = companies.find((company) =>
-        company.companyName?.trim().toLowerCase() === customerCompanyName
+      const matchedCompany = companies.find(
+        (comp) => comp.companyName?.trim().toLowerCase() === companyName
       );
  
       if (!matchedCompany) {
-        console.log(`❌ No matching company found for: ${customerCompanyName}`);
+        console.log(`❌ No matching company found for: ${companyName}`);
       } else {
         const e8Field = matchedCompany.extraFields?.find(
-          (field) => field.fieldName?.toUpperCase() === "E8 COMPANY ID"
+          (field) => field.fieldName.toUpperCase() === "E8 COMPANY ID"
         );
+ 
         const e8CompanyId = e8Field?.fieldValue || null;
  
-        console.log("🏢 Company Matched:", {
+        console.log("🏢 Company Info:", {
           companyId: matchedCompany.companyId,
           companyName: matchedCompany.companyName,
           e8CompanyId,
@@ -115,8 +135,8 @@ const companyRes = await fetch("https://api-b2b.bigcommerce.com/api/v3/io/compan
     }
  
     return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error("❌ Error in webhook handler:", err);
-    return NextResponse.json({ success: false, error: err }, { status: 500 });
+  } catch (error) {
+    console.error("❌ Error in webhook handler:", error);
+    return NextResponse.json({ success: false, error }, { status: 500 });
   }
 }
