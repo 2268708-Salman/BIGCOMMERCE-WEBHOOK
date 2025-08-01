@@ -1,43 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
  
-interface OrderProduct {
-  product_id: number;
-  name: string;
-  quantity: number;
-  price_inc_tax: string;
-  discounted_total_inc_tax: string;
-}
- 
-interface OrderResponse {
-  id: number;
-  status: string;
-  total_inc_tax: string;
-  shipping_cost_inc_tax: string;
-  products: OrderProduct[];
-  coupons: unknown[];
-  fees: unknown[];
-  customer_id: number;
-}
- 
-interface CustomerResponse {
-  id: number;
-  email: string;
-  company: string;
-  first_name: string;
-  last_name: string;
-}
- 
-interface ExtraField {
-  fieldName: string;
-  fieldValue: string;
-}
- 
-interface Company {
-  companyId: number;
-  companyName: string;
-  extraFields?: ExtraField[];
-}
- 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -46,9 +8,9 @@ export async function POST(req: NextRequest) {
     const orderId = body.data?.id;
     console.log("🔔 Webhook triggered for order:", orderId);
  
-    // 🧾 Fetch Order
+    // 🧾 Fetch Order (no include=products)
     const orderRes = await fetch(
-`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v2/orders/${orderId}?include=products`,
+`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v2/orders/${orderId}`,
       {
         headers: {
           'X-Auth-Token': process.env.BC_API_TOKEN!,
@@ -63,7 +25,26 @@ export async function POST(req: NextRequest) {
       throw new Error(`❌ Order fetch failed (${orderRes.status}): ${errorText}`);
     }
  
-    const order: OrderResponse = await orderRes.json();
+    const order = await orderRes.json();
+ 
+    // 📦 Fetch Order Products
+    const productsRes = await fetch(
+`https://api.bigcommerce.com/stores/${process.env.BC_STORE_HASH}/v2/orders/${orderId}/products`,
+      {
+        headers: {
+          'X-Auth-Token': process.env.BC_API_TOKEN!,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+ 
+    if (!productsRes.ok) {
+      const errorText = await productsRes.text();
+      throw new Error(`❌ Order products fetch failed (${productsRes.status}): ${errorText}`);
+    }
+ 
+    const products = await productsRes.json();
  
     // 👤 Fetch Customer
     const customerRes = await fetch(
@@ -83,17 +64,18 @@ export async function POST(req: NextRequest) {
     }
  
     const customerJson = await customerRes.json();
-    const customer: CustomerResponse = customerJson.data;
+    const customer = customerJson.data;
  
     console.log("🧾 Order Details:", {
 id: order.id,
       status: order.status,
       total_inc_tax: order.total_inc_tax,
       shipping_cost_inc_tax: order.shipping_cost_inc_tax,
-      products: order.products,
 coupons: order.coupons,
       fees: order.fees,
     });
+ 
+    console.log("📦 Products:", products);
  
     console.log("👤 Customer Details:", {
 id: customer.id,
@@ -105,10 +87,7 @@ company: customer.company,
  
 const companyName = customer.company?.trim().toLowerCase();
  
-    if (!companyName) {
-      console.log("❗ Customer has no company assigned.");
-    } else {
-      // 🏢 Fetch Companies
+    if (companyName) {
       const companyRes = await fetch(
 "https://api-b2b.bigcommerce.com/api/v3/io/companies",
         {
@@ -125,17 +104,15 @@ const companyName = customer.company?.trim().toLowerCase();
       }
  
       const companyJson = await companyRes.json();
-      const companies: Company[] = companyJson.data;
+      const companies = companyJson.data;
  
       const matchedCompany = companies.find(
-        (comp) => comp.companyName?.trim().toLowerCase() === companyName
+        (comp: any) => comp.companyName?.trim().toLowerCase() === companyName
       );
  
-      if (!matchedCompany) {
-        console.log(`❌ No matching company found for: ${companyName}`);
-      } else {
+      if (matchedCompany) {
         const e8Field = matchedCompany.extraFields?.find(
-          (field) => field.fieldName.toUpperCase() === "E8 COMPANY ID"
+          (field: any) => field.fieldName.toUpperCase() === "E8 COMPANY ID"
         );
         const e8CompanyId = e8Field?.fieldValue || null;
  
@@ -143,9 +120,12 @@ const companyName = customer.company?.trim().toLowerCase();
           companyId: matchedCompany.companyId,
           companyName: matchedCompany.companyName,
           e8CompanyId,
-          fullCompanyData: matchedCompany,
         });
+      } else {
+        console.log(`❌ No matching company found for: ${companyName}`);
       }
+    } else {
+      console.log("❗ Customer has no company assigned.");
     }
  
     return NextResponse.json({ success: true });
