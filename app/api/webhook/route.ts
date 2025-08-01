@@ -63,7 +63,6 @@ export async function POST(req: NextRequest) {
     }
  
     const order: OrderResponse = await orderRes.json();
- 
     const customerId = order.customer_id;
  
     const customerRes = await fetch(
@@ -128,11 +127,14 @@ const companyName = customer.company?.trim().toLowerCase();
       if (!matchedCompany) {
         console.log(`❌ No matching company found for: ${companyName}`);
       } else {
-        const e8Field = matchedCompany.extraFields?.find(
-          (field) => field.fieldName.toUpperCase() === "E8 COMPANY ID"
-        );
+        let e8CompanyId = null;
  
-        const e8CompanyId = e8Field?.fieldValue || null;
+        if (Array.isArray(matchedCompany.extraFields)) {
+          const e8Field = matchedCompany.extraFields.find(
+            (field) => field.fieldName.toUpperCase() === "E8 COMPANY ID"
+          );
+          e8CompanyId = e8Field?.fieldValue ?? null;
+        }
  
         console.log("🏢 Company Info:", {
           companyId: matchedCompany.companyId,
